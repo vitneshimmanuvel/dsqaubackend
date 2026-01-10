@@ -1,0 +1,387 @@
+// This is your Prisma schema file for D Square CRM
+// Using Neon PostgreSQL database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = "postgresql://neondb_owner:npg_cjO1uSK2vhHi@ep-noisy-surf-a4vrzvxi-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
+}
+
+// User Model - Enhanced for role hierarchy
+model User {
+  id          String   @id @default(cuid())
+  name        String
+  email       String   @unique
+  password    String
+  role        UserRole @default(CUSTOMER)
+  phone       String?
+  avatar      String?
+  address     String?
+  isActive    Boolean  @default(true)
+  permissions String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // For customers - which admin manages them
+  assignedToId String?
+  assignedTo   User?   @relation("AdminCustomers", fields: [assignedToId], references: [id])
+  customers    User[]  @relation("AdminCustomers")
+
+  // Projects where this user is the client
+  clientProjects    Project[] @relation("ProjectClient")
+  // Projects assigned to admin
+  assignedProjects  Project[] @relation("ProjectAdmin")
+  // Projects created by this user
+  createdProjects   Project[] @relation("ProjectCreator")
+  
+  notifications     Notification[]
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  CUSTOMER
+}
+
+// Project Model - Enhanced with stages
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  clientName  String
+  clientPhone String?
+  clientAddress String?
+  location    String?
+  status      ProjectStatus @default(PLANNING)
+  progress    Int           @default(0)
+  startDate   DateTime
+  deadline    DateTime
+  budget      Float         @default(0)
+  spent       Float         @default(0)
+  thumbnail   String        @default("https://images.unsplash.com/photo-1600596542815-2ad4d9a44566?auto=format&fit=crop&w=600&q=80")
+  description String?
+  notes       String?
+  gallery     String[]
+  
+  // Project stages as JSON
+  stages      Json?
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  clientId       String?
+  client         User?          @relation("ProjectClient", fields: [clientId], references: [id])
+  assignedAdminId String?
+  assignedAdmin  User?          @relation("ProjectAdmin", fields: [assignedAdminId], references: [id])
+  createdById    String?
+  createdBy      User?          @relation("ProjectCreator", fields: [createdById], references: [id])
+  
+  milestones     Milestone[]
+  documents      Document[]
+  invoices       Invoice[]
+  budgetItems    BudgetItem[]
+  materials      Material[]
+  workerLogs     WorkerLog[]
+  transactions   Transaction[]
+  notifications  Notification[]
+  payments       Payment[]
+}
+
+enum ProjectStatus {
+  PLANNING
+  FOUNDATION
+  STRUCTURE
+  FINISHING
+  COMPLETED
+  ON_HOLD
+}
+
+// Payment Milestone Model - Track payment stages
+model Payment {
+  id          String        @id @default(cuid())
+  stageName   String        // "Advance", "Foundation Complete", "Structure Complete", "Final"
+  amount      Float
+  dueDate     DateTime?
+  paidDate    DateTime?
+  status      PaymentMilestoneStatus @default(PENDING)
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  projectId   String
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+enum PaymentMilestoneStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+}
+
+// Milestone Model
+model Milestone {
+  id          String          @id @default(cuid())
+  title       String
+  date        DateTime
+  status      MilestoneStatus @default(PENDING)
+  description String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+enum MilestoneStatus {
+  COMPLETED
+  IN_PROGRESS
+  PENDING
+}
+
+// Document Model
+model Document {
+  id         String       @id @default(cuid())
+  name       String
+  type       DocumentType @default(PDF)
+  category   String?      // "contract", "drawing", "invoice", "permit", "other"
+  url        String
+  publicId   String?
+  size       String?
+  uploadedAt DateTime     @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+enum DocumentType {
+  PDF
+  DWG
+  IMG
+  XLS
+  DOC
+}
+
+// Invoice Model
+model Invoice {
+  id        String        @id @default(cuid())
+  number    String
+  amount    Float
+  date      DateTime      @default(now())
+  status    InvoiceStatus @default(PENDING)
+  stage     String?
+  createdAt DateTime      @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+enum InvoiceStatus {
+  PAID
+  PENDING
+  OVERDUE
+}
+
+// Budget Item Model
+model BudgetItem {
+  id          String         @id @default(cuid())
+  category    BudgetCategory
+  description String?
+  amount      Float
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+enum BudgetCategory {
+  MATERIALS
+  LABOR
+  EQUIPMENT
+  OVERHEAD
+}
+
+// Vendor Model
+model Vendor {
+  id            String          @id @default(cuid())
+  name          String
+  contactPerson String
+  phone         String
+  email         String?
+  rating        Float           @default(3)
+  specialty     VendorSpecialty @default(GENERAL)
+  location      String
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  materials Material[]
+}
+
+enum VendorSpecialty {
+  CEMENT
+  STEEL
+  SAND
+  WOOD
+  ELECTRICAL
+  PLUMBING
+  PAINT
+  GENERAL
+}
+
+// Material Order Model
+model Material {
+  id              String         @id @default(cuid())
+  item            String
+  description     String?
+  supplier        String
+  quantity        Int
+  unit            MaterialUnit
+  unitPrice       Float          @default(0)
+  status          MaterialStatus @default(PENDING)
+  orderDate       DateTime       @default(now())
+  expectedDelivery DateTime?
+  deliveredDate   DateTime?
+  cost            Float
+  paymentStatus   MaterialPaymentStatus @default(PENDING)
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id])
+  vendorId   String?
+  vendor     Vendor?  @relation(fields: [vendorId], references: [id])
+}
+
+enum MaterialUnit {
+  BAGS
+  KG
+  TRUCKS
+  CFT
+  PIECES
+  LITERS
+  METERS
+  SQFT
+}
+
+enum MaterialStatus {
+  PENDING
+  ORDERED
+  SHIPPED
+  DELIVERED
+}
+
+enum MaterialPaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+// Worker Log Model - Enhanced with more categories
+model WorkerLog {
+  id            String         @id @default(cuid())
+  category      WorkerCategory
+  count         Int
+  shift         Shift          @default(DAY)
+  date          DateTime       @default(now())
+  hoursWorked   Int            @default(8)
+  ratePerWorker Float
+  totalWage     Float          // Auto-calculated: count * ratePerWorker * (hoursWorked/8)
+  status        WorkerPaymentStatus  @default(PENDING)
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id])
+}
+
+enum WorkerCategory {
+  HELPER_MALE
+  HELPER_FEMALE
+  MASON
+  LABOUR
+  CIVIL_MANAGER
+  BAR_BENDER
+  ELECTRICIAN
+  PLUMBER
+  CARPENTER
+  GRILL_WORKER
+  TILE_WORKER
+  PAINTER
+}
+
+enum Shift {
+  DAY
+  NIGHT
+  FULL_DAY
+}
+
+enum WorkerPaymentStatus {
+  PENDING
+  PAID
+}
+
+// Transaction Model
+model Transaction {
+  id          String            @id @default(cuid())
+  description String
+  amount      Float
+  type        TransactionType
+  date        DateTime          @default(now())
+  status      TransactionStatus @default(PENDING)
+  category    TransactionCategory @default(OTHER)
+  reference   String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id])
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+}
+
+enum TransactionCategory {
+  PAYMENT
+  MATERIAL
+  WAGES
+  EQUIPMENT
+  OVERHEAD
+  OTHER
+}
+
+// Notification Model
+model Notification {
+  id        String           @id @default(cuid())
+  title     String
+  message   String
+  type      NotificationType @default(INFO)
+  read      Boolean          @default(false)
+  link      String?
+  createdAt DateTime         @default(now())
+
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id])
+}
+
+enum NotificationType {
+  ALERT
+  INFO
+  SUCCESS
+  WARNING
+  PAYMENT_REMINDER
+  PROJECT_UPDATE
+}
