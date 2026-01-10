@@ -2,12 +2,13 @@
 // Using Neon PostgreSQL database
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
-  url      = "postgresql://neondb_owner:npg_cjO1uSK2vhHi@ep-noisy-surf-a4vrzvxi-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
+  url      = env("DATABASE_URL")
 }
 
 // User Model - Enhanced for role hierarchy
