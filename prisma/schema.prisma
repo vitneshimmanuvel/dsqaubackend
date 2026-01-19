@@ -499,3 +499,214 @@ enum NotificationType {
   PAYMENT_REMINDER
   PROJECT_UPDATE
 }
+
+// Lead Pipeline Model - For tracking potential clients
+model Lead {
+  id              String      @id @default(cuid())
+  name            String
+  phone           String
+  email           String?
+  address         String?
+  source          LeadSource  @default(WEBSITE)
+  interest        String?     // What they're interested in
+  budget          Float?
+  
+  // Pipeline stage tracking
+  stage           LeadStage   @default(NEW)
+  stageHistory    String?     // JSON array of stage changes
+  priority        LeadPriority @default(MEDIUM)
+  temperature     String?     // HOT, WARM, COLD
+  
+  // Assignment
+  assignedToId    String?
+  
+  // Follow-up tracking
+  lastContactDate DateTime?
+  nextFollowUp    DateTime?
+  followUpCount   Int         @default(0)
+  
+  // Conversion
+  isConverted     Boolean     @default(false)
+  convertedToProjectId String?
+  convertedAt     DateTime?
+  lostReason      String?
+  
+  notes           String?
+  tags            String[]    @default([])
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  followUps       FollowUp[]
+}
+
+// Follow-up Model for tracking interactions
+model FollowUp {
+  id          String       @id @default(cuid())
+  type        FollowUpType
+  notes       String?
+  outcome     String?      // What happened
+  nextAction  String?      // What to do next
+  scheduledAt DateTime?
+  completedAt DateTime?
+  isCompleted Boolean      @default(false)
+  
+  leadId      String
+  lead        Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdAt   DateTime     @default(now())
+}
+
+enum LeadSource {
+  WEBSITE
+  REFERRAL
+  ADVERTISEMENT
+  SOCIAL_MEDIA
+  WALK_IN
+  PHONE_CALL
+  OTHER
+}
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL_SENT
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum FollowUpType {
+  CALL
+  MEETING
+  EMAIL
+  SITE_VISIT
+  PROPOSAL
+  OTHER
+}
+
+// ========== RAW MATERIAL BUSINESS MODULE ==========
+
+// Enquiry Model - Customer inquiries for raw materials
+model Enquiry {
+  id              String        @id @default(cuid())
+  enquiryNumber   String        @unique @default(cuid())
+  customerName    String
+  customerPhone   String
+  customerEmail   String?
+  customerAddress String?
+  
+  // Enquiry details
+  materialType    String        // Sand, Cement, Bricks, Steel, etc.
+  quantity        Float
+  unit            String        @default("TRUCKS")
+  description     String?
+  deliveryAddress String?
+  deliveryDate    DateTime?
+  
+  // Pricing
+  quotedPrice     Float?
+  finalPrice      Float?
+  isNegotiated    Boolean       @default(false)
+  
+  // Status tracking
+  status          EnquiryStatus @default(NEW)
+  priority        String?       @default("NORMAL")
+  
+  // Conversion
+  convertedToOrderId String?
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  orders          RawMaterialOrder[]
+}
+
+// Raw Material Order - Orders placed for materials
+model RawMaterialOrder {
+  id              String              @id @default(cuid())
+  orderNumber     String              @unique @default(cuid())
+  
+  // Customer info
+  customerName    String
+  customerPhone   String
+  customerAddress String?
+  
+  // Order details
+  materialType    String
+  quantity        Float
+  unit            String              @default("TRUCKS")
+  unitPrice       Float
+  totalAmount     Float
+  
+  // Delivery
+  deliveryAddress String
+  deliveryDate    DateTime?
+  deliveredDate   DateTime?
+  vehicleNumber   String?
+  driverName      String?
+  driverPhone     String?
+  
+  // Status & Payment
+  status          RawOrderStatus      @default(PENDING)
+  paymentStatus   RawPaymentStatus    @default(UNPAID)
+  paidAmount      Float               @default(0)
+  paymentMode     String?
+  
+  // Tracking
+  dispatchedAt    DateTime?
+  notes           String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  
+  enquiryId       String?
+  enquiry         Enquiry?            @relation(fields: [enquiryId], references: [id])
+  
+  payments        RawMaterialPayment[]
+}
+
+// Payment tracking for raw material orders
+model RawMaterialPayment {
+  id          String   @id @default(cuid())
+  amount      Float
+  paymentDate DateTime @default(now())
+  paymentMode String?  // CASH, BANK, UPI, CHEQUE
+  reference   String?
+  notes       String?
+  
+  orderId     String
+  order       RawMaterialOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}
+
+enum EnquiryStatus {
+  NEW
+  QUOTED
+  NEGOTIATING
+  CONFIRMED
+  CANCELLED
+  CONVERTED
+}
+
+enum RawOrderStatus {
+  PENDING
+  CONFIRMED
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+}
+
+enum RawPaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+

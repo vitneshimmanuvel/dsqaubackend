@@ -30,6 +30,8 @@ const notificationRoutes = require('./routes/notifications');
 const customerRoutes = require('./routes/customers');
 const paymentRoutes = require('./routes/payments');
 const analyticsRoutes = require('./routes/analytics');
+const leadRoutes = require('./routes/leads');
+const rawMaterialRoutes = require('./routes/raw-materials');
 
 // Initialize Express app
 const app = express();
@@ -65,6 +67,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/leads', leadRoutes);
+app.use('/api/raw-materials', rawMaterialRoutes);
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
