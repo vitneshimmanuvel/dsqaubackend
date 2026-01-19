@@ -29,6 +29,7 @@ const uploadRoutes = require('./routes/upload');
 const notificationRoutes = require('./routes/notifications');
 const customerRoutes = require('./routes/customers');
 const paymentRoutes = require('./routes/payments');
+const analyticsRoutes = require('./routes/analytics');
 
 // Initialize Express app
 const app = express();
@@ -63,6 +64,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
