@@ -100,14 +100,33 @@ enum ProjectStatus {
   ON_HOLD
 }
 
-// Payment Milestone Model - Track payment stages
+// Payment Milestone Model - Track payment stages with Two-Sided Acknowledgment
 model Payment {
   id          String        @id @default(cuid())
   stageName   String        // "Advance", "Foundation Complete", "Structure Complete", "Final"
-  amount      Float
+  amount      Float         // Total amount for this stage
+  paidAmount  Float         @default(0)  // Amount paid so far (for part payments)
   dueDate     DateTime?
   paidDate    DateTime?
   status      PaymentMilestoneStatus @default(PENDING)
+  
+  // Two-Sided Acknowledgment
+  adminAcknowledged     Boolean   @default(false)  // Admin confirms payment request
+  adminAcknowledgedAt   DateTime?
+  adminAcknowledgedBy   String?   // Admin user ID
+  clientAcknowledged    Boolean   @default(false)  // Client confirms receipt/acceptance
+  clientAcknowledgedAt  DateTime?
+  clientNotes           String?   // Client can add notes when acknowledging
+  
+  // Reminders
+  reminderEnabled       Boolean   @default(true)
+  reminderDays          Int       @default(3)  // Days before due date to remind
+  lastReminderSent      DateTime?
+  
+  // Part Payment Tracking
+  isPartPayment         Boolean   @default(false)
+  partPayments          PartPayment[]
+  
   notes       String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -116,11 +135,31 @@ model Payment {
   project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
+// Part Payment Records
+model PartPayment {
+  id          String   @id @default(cuid())
+  amount      Float
+  paidDate    DateTime @default(now())
+  notes       String?
+  receiptUrl  String?  // Upload payment receipt
+  
+  // Acknowledgment
+  adminAcknowledged   Boolean   @default(false)
+  clientAcknowledged  Boolean   @default(false)
+  
+  paymentId   String
+  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+}
+
 enum PaymentMilestoneStatus {
-  PENDING
-  PARTIAL
-  PAID
-  OVERDUE
+  PENDING           // Not yet due
+  AWAITING_CLIENT   // Admin requested, waiting for client acknowledgment
+  AWAITING_ADMIN    // Client paid, waiting for admin confirmation
+  PARTIAL           // Part payment received
+  PAID              // Fully paid and acknowledged
+  OVERDUE           // Past due date
 }
 
 // Milestone Model
@@ -204,49 +243,71 @@ enum BudgetCategory {
   OVERHEAD
 }
 
-// Vendor Model
+// Vendor Model - Enhanced with payment history
 model Vendor {
   id            String          @id @default(cuid())
   name          String
   contactPerson String
   phone         String
   email         String?
+  address       String?
+  gstNumber     String?
+  panNumber     String?
+  bankName      String?
+  bankAccount   String?
+  ifscCode      String?
   rating        Float           @default(3)
-  specialty     VendorSpecialty @default(GENERAL)
+  specialty     String          @default("GENERAL")  // Flexible specialty
   location      String
   isActive      Boolean         @default(true)
+  notes         String?
+  
+  // Payment summary
+  totalOrders     Int           @default(0)
+  totalAmount     Float         @default(0)
+  totalPaid       Float         @default(0)
+  pendingAmount   Float         @default(0)
+  
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  materials Material[]
+  materials     Material[]
+  payments      MaterialPayment[]
 }
 
-enum VendorSpecialty {
-  CEMENT
-  STEEL
-  SAND
-  WOOD
-  ELECTRICAL
-  PLUMBING
-  PAINT
-  GENERAL
-}
-
-// Material Order Model
+// Material Order Model - Enhanced with payment tracking
 model Material {
   id              String         @id @default(cuid())
   item            String
   description     String?
+  materialType    String?        // Cement, Sand, Bricks, Steel, etc.
   supplier        String
   quantity        Int
-  unit            MaterialUnit
+  unit            String         @default("PIECES")  // Flexible unit
   unitPrice       Float          @default(0)
+  totalCost       Float          // quantity * unitPrice
+  
+  // Order tracking
   status          MaterialStatus @default(PENDING)
   orderDate       DateTime       @default(now())
   expectedDelivery DateTime?
   deliveredDate   DateTime?
-  cost            Float
+  receivedQuantity Int?          // Actual quantity received (may differ)
+  qualityCheck    Boolean        @default(false)
+  qualityNotes    String?
+  
+  // Payment tracking
   paymentStatus   MaterialPaymentStatus @default(PENDING)
+  paidAmount      Float          @default(0)
+  remainingAmount Float          @default(0)
+  payments        MaterialPayment[]
+  
+  // Reminders
+  paymentDueDate  DateTime?
+  reminderEnabled Boolean        @default(true)
+  reminderDays    Int            @default(3)
+  lastReminderSent DateTime?
+  
   notes           String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -257,15 +318,22 @@ model Material {
   vendor     Vendor?  @relation(fields: [vendorId], references: [id])
 }
 
-enum MaterialUnit {
-  BAGS
-  KG
-  TRUCKS
-  CFT
-  PIECES
-  LITERS
-  METERS
-  SQFT
+// Material Payment - Track individual payments to vendors
+model MaterialPayment {
+  id          String   @id @default(cuid())
+  amount      Float
+  paymentDate DateTime @default(now())
+  paymentMode String?  // CASH, BANK, UPI, CHEQUE
+  reference   String?  // Transaction ID, cheque number, etc.
+  notes       String?
+  receiptUrl  String?
+  
+  materialId  String
+  material    Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  vendorId    String?
+  vendor      Vendor?  @relation(fields: [vendorId], references: [id])
+  
+  createdAt   DateTime @default(now())
 }
 
 enum MaterialStatus {
@@ -273,25 +341,49 @@ enum MaterialStatus {
   ORDERED
   SHIPPED
   DELIVERED
+  CANCELLED
 }
 
 enum MaterialPaymentStatus {
   PENDING
   PARTIAL
   PAID
+  OVERDUE
 }
 
-// Worker Log Model - Enhanced with more categories
+// Worker Log Model - Enhanced with individual tracking, mistakes, acknowledgment
 model WorkerLog {
   id            String         @id @default(cuid())
-  category      WorkerCategory
-  count         Int
+  category      String         // Can be predefined or custom category
+  customCategory String?       // For user-defined categories
+  workerName    String?        // Optional worker name for individual tracking
+  workerRole    String?        // Role/designation
+  count         Int            @default(1)
   shift         Shift          @default(DAY)
+  shiftFraction Float          @default(1.0)  // 1.0 = full shift, 0.5 = half shift
   date          DateTime       @default(now())
   hoursWorked   Int            @default(8)
   ratePerWorker Float
-  totalWage     Float          // Auto-calculated: count * ratePerWorker * (hoursWorked/8)
+  totalWage     Float          // Auto-calculated
   status        WorkerPaymentStatus  @default(PENDING)
+  
+  // Acknowledgment for work verification
+  workVerified      Boolean    @default(false)
+  verifiedAt        DateTime?
+  verifiedBy        String?    // Admin who verified
+  
+  // Mistake/Issue tracking
+  hasMistake        Boolean    @default(false)
+  mistakeDescription String?
+  mistakeAcknowledged Boolean  @default(false)
+  mistakeAcknowledgedAt DateTime?
+  faultTolerance    String?    // LOW, MEDIUM, HIGH
+  
+  // Weekly payment tracking
+  weekNumber        Int?       // ISO week number
+  weekYear          Int?       // Year for the week
+  weekPaymentId     String?    // Link to weekly payment batch
+  
   notes         String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -300,29 +392,50 @@ model WorkerLog {
   project   Project? @relation(fields: [projectId], references: [id])
 }
 
-enum WorkerCategory {
-  HELPER_MALE
-  HELPER_FEMALE
-  MASON
-  LABOUR
-  CIVIL_MANAGER
-  BAR_BENDER
-  ELECTRICIAN
-  PLUMBER
-  CARPENTER
-  GRILL_WORKER
-  TILE_WORKER
-  PAINTER
+// Custom Worker Category - User can define their own
+model CustomWorkerCategory {
+  id          String   @id @default(cuid())
+  name        String
+  defaultRate Float    @default(500)
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Weekly Payment Batch - For batch processing weekly wages
+model WeeklyPaymentBatch {
+  id          String   @id @default(cuid())
+  weekNumber  Int
+  weekYear    Int
+  startDate   DateTime
+  endDate     DateTime
+  totalAmount Float    @default(0)
+  workerCount Int      @default(0)
+  status      WeeklyPaymentStatus @default(PENDING)
+  paidAt      DateTime?
+  notes       String?
+  projectId   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 enum Shift {
   DAY
   NIGHT
   FULL_DAY
+  HALF_DAY
 }
 
 enum WorkerPaymentStatus {
   PENDING
+  APPROVED
+  PAID
+}
+
+enum WeeklyPaymentStatus {
+  PENDING
+  PROCESSING
   PAID
 }
 
